@@ -1,12 +1,10 @@
 from __future__ import annotations
 
+import argparse
+import sys
 from pathlib import Path
 
-import typer
-
 from . import ics, parser
-
-app = typer.Typer(help="Convert a UCSD class schedule into a Google Calendar ICS file.")
 
 TEMPLATE = """\
 # ucsd-cal schedule template
@@ -34,28 +32,36 @@ classes:
 """
 
 
-@app.command()
-def generate(
-    schedule_file: Path = typer.Argument(..., help="Path to the YAML schedule file."),
-    output: Path = typer.Option(Path("calendar.ics"), "-o", "--output", help="Output .ics file path."),
-) -> None:
-    """Generate an ICS calendar from a YAML schedule file."""
+def cmd_generate(args: argparse.Namespace) -> None:
+    schedule_file = Path(args.schedule_file)
+    output = Path(args.output)
     if not schedule_file.exists():
-        typer.echo(f"Error: {schedule_file} not found.", err=True)
-        raise typer.Exit(1)
-
+        print(f"Error: {schedule_file} not found.", file=sys.stderr)
+        sys.exit(1)
     schedule = parser.load(schedule_file)
     calendar = ics.generate(schedule)
-    output.write_bytes(calendar.to_ical())
-    typer.echo(f"Wrote {len(schedule.classes)} class(es) to {output}")
-    typer.echo("Import the .ics file into Google Calendar via Settings → Import & Export.")
+    output.write_text(calendar)
+    print(f"Wrote {len(schedule.classes)} class(es) to {output}")
+    print("Import the .ics file into Google Calendar via Settings → Import & Export.")
 
 
-@app.command()
-def template() -> None:
-    """Print a template YAML schedule file to stdout."""
-    typer.echo(TEMPLATE, nl=False)
+def cmd_template(args: argparse.Namespace) -> None:  # noqa: ARG001
+    print(TEMPLATE, end="")
 
 
 def main() -> None:
-    app()
+    p = argparse.ArgumentParser(
+        description="Convert a UCSD class schedule into a Google Calendar ICS file."
+    )
+    sub = p.add_subparsers(dest="command", required=True)
+
+    gen = sub.add_parser("generate", help="Generate an ICS calendar from a YAML schedule file.")
+    gen.add_argument("schedule_file", help="Path to the YAML schedule file.")
+    gen.add_argument("-o", "--output", default="calendar.ics", help="Output .ics file path.")
+    gen.set_defaults(func=cmd_generate)
+
+    tmpl = sub.add_parser("template", help="Print a template YAML schedule file to stdout.")
+    tmpl.set_defaults(func=cmd_template)
+
+    args = p.parse_args()
+    args.func(args)
